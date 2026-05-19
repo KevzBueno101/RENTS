@@ -44,8 +44,21 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'accounts',
-    'notifications'
+    'notifications',
+    'cloudinary',
+    'cloudinary_storage',
 ]
+
+# Cloudinary config
+import cloudinary
+cloudinary.config(
+    cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.environ.get('CLOUDINARY_API_KEY'),
+    api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+)
+
+# I-replace ang DEFAULT_FILE_STORAGE
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/tenant/dashboard/'
