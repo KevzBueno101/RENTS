@@ -625,36 +625,6 @@
             });
         }
     </script>
-
-    <!-- Chatbase Embed Widget -->
-<script>
-  window.embeddedChatbotConfig = {
-    chatbotId: "VwVh-DQbtYncpuoHyq7Bo",
-    domain: "www.chatbase.co"
-  }
-</script>
-<script src="https://www.chatbase.co/embed.min.js"
-  chatbotId="VwVh-DQbtYncpuoHyq7Bo"
-  domain="www.chatbase.co"
-  defer>
-</script>
-
-{% if user.is_authenticated and not user.is_staff %}
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    fetch('/api/chatbase-token/')
-      .then(res => res.json())
-      .then(data => {
-        if (window.chatbase) {
-          window.chatbase('identify', { token: data.token });
-        }
-      })
-      .catch(err => console.error('Chatbase token error:', err));
-  });
-</script>
-{% endif %}
-
-</body>
 </body>
 
 </html>

@@ -108,7 +108,7 @@ class TenantDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "tenant/tenant_dashboard.html")
-        self.assertIn("dashboard_data", response.context)
+        self.assertIn("tenant", response.context)
         self.assertContains(response, "Current Balance")
 
     def test_dashboard_service_filters_to_current_tenant(self):

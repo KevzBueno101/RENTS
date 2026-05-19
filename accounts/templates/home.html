@@ -488,7 +488,7 @@ Send us a message and our team will respond as soon as possible.
             <li class="mb-2"><a href="{% url 'home' %}#hero" class="link-light link-underline-opacity-0 link-underline-opacity-100-hover">Home</a></li>
             <li class="mb-2"><a href="{% url 'home' %}#featured-rooms" class="link-light link-underline-opacity-0 link-underline-opacity-100-hover">Rooms</a></li>
             <li class="mb-2"><a href="{% url 'login' %}" class="link-light link-underline-opacity-0 link-underline-opacity-100-hover">Tenant login</a></li>
-            <li><a href="{% url 'admin_login' %}" class="link-secondary text-decoration-none">Staff sign-in</a></li>
+            {% comment %} <li><a href="{% url 'admin_login' %}" class="link-secondary text-decoration-none">Staff sign-in</a></li> {% endcomment %}
           </ul>
         </div>
         <div class="col-6 col-lg-3">
@@ -827,7 +827,7 @@ Send us a message and our team will respond as soon as possible.
 <script src="https://www.chatbase.co/embed.min.js"
   chatbotId="VwVh-DQbtYncpuoHyq7Bo"
   domain="www.chatbase.co"
-  defer>
+  async>
 </script>
 
 {% if user.is_authenticated and not user.is_staff %}
