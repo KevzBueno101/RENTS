@@ -65,7 +65,7 @@ def get_payment_summary(user):
         "next_bill": unpaid_bills,
         "has_overdue": Bill.objects.filter(tenant=tenant, status='overdue').exists(),
         "days_until_due": (unpaid_bills.due_date - today).days if unpaid_bills and unpaid_bills.due_date and unpaid_bills.due_date > today else None,
-        "is_overdue": unpaid_bills and unpaid_bills.due_date < today and unpaid_bills.status != 'paid'
+        "is_overdue": unpaid_bills and unpaid_bills.due_date and unpaid_bills.due_date < today and unpaid_bills.status != 'paid'
     }
 
 
