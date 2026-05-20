@@ -68,7 +68,7 @@ def get_upcoming_payment(user):
     
     # Calculate days until due
     today = timezone.now().date()
-    days_left = (bill.due_date - today).days
+    days_left = (bill.due_date - today).days if bill.due_date else 0
     
     # Business logic for overdue calculation and alert styling
     is_overdue = days_left < 0
