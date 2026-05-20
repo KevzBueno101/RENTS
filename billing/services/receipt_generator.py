@@ -28,11 +28,17 @@ class PNGReceiptGenerator(BaseReceiptGenerator):
     format = "png"
 
     def generate(self, payment):
+        import tempfile
+
         receipt_id = payment.receipt_id or f"receipt_{uuid.uuid4().hex}"
         relative_path = Path("receipts") / f"tenant_{payment.bill.tenant_id}" / f"{receipt_id}.png"
-        absolute_path = Path(settings.MEDIA_ROOT) / relative_path
-        data = build_receipt_data(payment, receipt_id)
 
+        # Write to a temp file instead of MEDIA_ROOT (Cloudinary has no local MEDIA_ROOT)
+        tmp_dir = Path(tempfile.gettempdir()) / "rents_receipts"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        absolute_path = tmp_dir / f"{receipt_id}.png"
+
+        data = build_receipt_data(payment, receipt_id)
         render_receipt_png(data, absolute_path)
 
         return ReceiptResult(
@@ -138,13 +144,39 @@ def generate_receipt_image(data):
     return str(absolute_path)
 
 
+
 def generate_receipt_for_payment(payment, output_format="png", save=True):
     result = ReceiptGenerator(output_format).generate(payment)
+
     if save:
         payment.receipt_id = result.receipt_id
+
         if output_format == "png":
-            payment.receipt_image.name = result.relative_path
+            # Upload the locally-generated file to Django's storage backend (Cloudinary)
+            from django.core.files import File
+            from django.core.files.storage import default_storage
+
+            local_path = Path(result.absolute_path)
+            storage_name = result.relative_path  # e.g. "receipts/tenant_15/receipt_xxx.png"
+
+            # Delete existing file at that path in storage if it exists
+            if default_storage.exists(storage_name):
+                default_storage.delete(storage_name)
+
+            # Upload via Django storage (this sends it to Cloudinary)
+            with open(local_path, "rb") as f:
+                saved_name = default_storage.save(storage_name, File(f))
+
+            # Clean up local temp file
+            try:
+                local_path.unlink()
+            except Exception:
+                pass
+
+            payment.receipt_image.name = saved_name
+
         payment.save(update_fields=["receipt_id", "receipt_image"])
+
     return result
 
 
