@@ -8,5 +8,6 @@ db.mysql
 *.vscode
 .DS_Store
 
+
 # Local test files and debugging scripts
 # test_*.py

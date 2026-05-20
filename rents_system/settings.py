@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'notifications',
     'cloudinary',
     'cloudinary_storage',
+
 ]
 
 # Cloudinary config
@@ -59,6 +60,11 @@ cloudinary.config(
 
 # I-replace ang DEFAULT_FILE_STORAGE
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY': os.environ.get('CLOUDINARY_API_KEY'),
+    'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET'),
+}
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/tenant/dashboard/'
