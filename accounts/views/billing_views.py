@@ -426,7 +426,6 @@ def generate_payment_receipt(request, payment_id):
         'download': True,
     })
 
-
 @login_required(login_url='/login/')
 def download_payment_receipt(request, payment_id):
     """Download a generated PNG receipt."""
@@ -434,20 +433,26 @@ def download_payment_receipt(request, payment_id):
     if not payment.receipt_image:
         raise Http404("Receipt has not been generated")
 
-    receipt_path = Path(settings.MEDIA_ROOT) / payment.receipt_image.name
-    if not receipt_path.exists():
+    import requests as http_requests
+
+    # Get the Cloudinary URL
+    try:
+        receipt_url = payment.receipt_image.url
+    except Exception:
         raise Http404("Receipt file not found")
 
-    filename = f"{payment.receipt_id or 'receipt'}.png"
-    
-    with open(receipt_path, 'rb') as f:
-        file_data = f.read()
-        
-    response = HttpResponse(file_data, content_type='image/png')
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    response['Content-Length'] = len(file_data)
-    return response
+    # Fetch from Cloudinary and serve as download
+    try:
+        response = http_requests.get(receipt_url, timeout=15)
+        response.raise_for_status()
+    except Exception:
+        raise Http404("Receipt file could not be retrieved")
 
+    filename = f"{payment.receipt_id or 'receipt'}.png"
+    http_response = HttpResponse(response.content, content_type='image/png')
+    http_response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    http_response['Content-Length'] = len(response.content)
+    return http_response
 
 @login_required(login_url='/admin/login/')
 def send_payment_receipt(request, payment_id):
