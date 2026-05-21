@@ -206,7 +206,10 @@ else:
     DEFAULT_FROM_EMAIL = 'RENTS System <noreply@rents.com>'
 
 # Password Reset Settings
-PASSWORD_RESET_TIMEOUT = 86400  # 24 hours in seconds
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '86400'))
+PASSWORD_RESET_RATE_WINDOW = int(os.getenv('PASSWORD_RESET_RATE_WINDOW', '900'))
+PASSWORD_RESET_EMAIL_RATE_LIMIT = int(os.getenv('PASSWORD_RESET_EMAIL_RATE_LIMIT', '5'))
+PASSWORD_RESET_IP_RATE_LIMIT = int(os.getenv('PASSWORD_RESET_IP_RATE_LIMIT', '20'))
 
 # Site Configuration for Password Reset Links
 SITE_ID = 1
@@ -217,16 +220,15 @@ def _canonical_base_url(raw: str, fallback: str) -> str:
     return u if u else fallback
 
 
-_site_url_explicit = _canonical_base_url(os.getenv('SITE_URL', ''), '')
-if _site_url_explicit:
-    SITE_URL = _site_url_explicit
-elif os.getenv('RENDER'):
-    SITE_URL = _canonical_base_url(
-        os.getenv('RENDER_EXTERNAL_URL', ''),
-        'https://rents-system.onrender.com',
-    )
-else:
-    SITE_URL = 'http://127.0.0.1:8000'
+SITE_NAME = os.getenv('SITE_NAME', 'RENTS System')
+SITE_URL = _canonical_base_url(
+    os.getenv('SITE_URL')
+    or os.getenv('PUBLIC_BASE_URL')
+    or os.getenv('FRONTEND_URL')
+    or os.getenv('RENDER_EXTERNAL_URL')
+    or '',
+    '',
+)
 
 MEDIA_URL  = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

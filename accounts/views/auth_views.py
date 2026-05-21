@@ -1,6 +1,8 @@
 """
 Authentication-related views: login, signup, logout, profile management.
 """
+import logging
+
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
@@ -12,7 +14,9 @@ from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 from django.http import HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from django.contrib import messages
+from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives
+from django.utils.crypto import salted_hmac
 from django.template.loader import render_to_string
 from ..models import Room, TenantProfile, AdminProfile
 from ..activity_utils import log_activity
@@ -27,6 +31,12 @@ from accounts.rbac.admin_login_throttle import (
     record_admin_failed_login,
 )
 from accounts.rbac.policy import SESSION_PORTAL_KEY
+
+
+logger = logging.getLogger(__name__)
+PASSWORD_RESET_GENERIC_MESSAGE = (
+    'If an account with that email exists, a password reset link has been sent.'
+)
 
 
 def _safe_next_redirect(request, fallback_route: str):
@@ -362,7 +372,9 @@ def _edit_tenant_profile(request):
 class CustomPasswordResetForm(PasswordResetForm):
     """PasswordResetForm whose send_mail is actually invoked by form.save(); tracks delivery failures."""
 
-    mail_delivery_failed = False
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mail_delivery_failed = False
 
     def save(
         self,
@@ -399,12 +411,8 @@ class CustomPasswordResetForm(PasswordResetForm):
         html_email_template_name=None,
     ):
         """Send mail with SendGrid API, SMTP fallback, console fallback for DEBUG; marks mail_delivery_failed."""
-        import logging
-
         from django.conf import settings
         from django.core.mail import send_mail as django_send_mail
-
-        logger = logging.getLogger(__name__)
 
         # Try SendGrid HTTP API first when configured (not SMTP)
         try:
@@ -489,6 +497,14 @@ class CustomPasswordResetView(PasswordResetView):
     form_class = CustomPasswordResetForm
 
     @staticmethod
+    def _success_payload():
+        return {
+            'ok': True,
+            'email_sent': True,
+            'message': PASSWORD_RESET_GENERIC_MESSAGE,
+        }
+
+    @staticmethod
     def _expects_json(request):
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return True
@@ -503,6 +519,44 @@ class CustomPasswordResetView(PasswordResetView):
             )
         return super().form_invalid(form)
 
+    def _generic_success_response(self):
+        if self._expects_json(self.request):
+            return JsonResponse(self._success_payload())
+
+        messages.info(self.request, PASSWORD_RESET_GENERIC_MESSAGE)
+        return HttpResponseRedirect(self.get_success_url())
+
+    def _is_rate_limited(self, email):
+        from django.conf import settings
+
+        window = int(getattr(settings, 'PASSWORD_RESET_RATE_WINDOW', 900))
+        email_limit = int(getattr(settings, 'PASSWORD_RESET_EMAIL_RATE_LIMIT', 5))
+        ip_limit = int(getattr(settings, 'PASSWORD_RESET_IP_RATE_LIMIT', 20))
+        ip = get_client_ip(self.request)
+        email_normalized = (email or '').strip().lower()
+
+        def over_limit(scope, raw_value, limit):
+            if limit <= 0:
+                return False
+            digest = salted_hmac(
+                'password-reset-rate-limit',
+                f'{scope}:{raw_value}',
+            ).hexdigest()
+            key = f'pwd-reset:{scope}:{digest}'
+            if cache.add(key, 1, timeout=window):
+                return False
+            try:
+                attempts = cache.incr(key)
+            except ValueError:
+                cache.set(key, 1, timeout=window)
+                return False
+            return attempts > limit
+
+        return (
+            over_limit('ip', ip, ip_limit)
+            or over_limit('email', email_normalized, email_limit)
+        )
+
     def form_valid(self, form):
         from django.conf import settings
 
@@ -514,9 +568,20 @@ class CustomPasswordResetView(PasswordResetView):
         )
         use_https = site_url.startswith('https://')
 
-        extra = {'site_name': 'RENTS System'}
+        extra = {
+            'site_name': getattr(settings, 'SITE_NAME', 'RENTS System'),
+            'password_reset_timeout_hours': max(
+                1,
+                int(getattr(settings, 'PASSWORD_RESET_TIMEOUT', 86400)) // 3600,
+            ),
+        }
         if self.extra_email_context:
             extra.update(self.extra_email_context)
+
+        email = form.cleaned_data.get('email', '')
+        if self._is_rate_limited(email):
+            logger.warning('Password reset request rate-limited for IP %s', get_client_ip(self.request))
+            return self._generic_success_response()
 
         opts = {
             'use_https': use_https,
@@ -537,56 +602,27 @@ class CustomPasswordResetView(PasswordResetView):
         try:
             form.save(**opts)
         except Exception as exc:
-            if self._expects_json(self.request):
-                return JsonResponse(
-                    {'ok': False, 'email_sent': False, 'error': str(exc)},
-                    status=503,
-                )
-            messages.error(
-                self.request,
-                'We could not send the password reset email. Try again later or contact support.',
-            )
-            return HttpResponseRedirect(self.get_success_url())
+            logger.exception('Password reset email dispatch failed.')
+            return self._generic_success_response()
 
         failed = getattr(form, 'mail_delivery_failed', False)
         if failed:
-            if self._expects_json(self.request):
-                return JsonResponse(
-                    {
-                        'ok': False,
-                        'email_sent': False,
-                        'error': 'We could not send the password reset email. Try again later or contact support.',
-                    },
-                    status=503,
-                )
-            messages.error(
-                self.request,
-                'We could not send the password reset email. Try again later or contact support.',
-            )
-            return HttpResponseRedirect(self.get_success_url())
+            logger.error('Password reset email delivery failed.')
+            return self._generic_success_response()
 
         if self._expects_json(self.request):
-            return JsonResponse(
-                {
-                    'ok': True,
-                    'email_sent': True,
-                    'message': 'If an account with that email exists, a password reset link has been sent.',
-                }
-            )
+            return JsonResponse(self._success_payload())
 
-        messages.info(
-            self.request,
-            'If an account with that email exists, a password reset link has been sent.',
-        )
-        return HttpResponseRedirect(self.get_success_url())
+        return self._generic_success_response()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from django.conf import settings
 
         su = (getattr(settings, 'SITE_URL', '') or '').strip().rstrip('/')
-        context['domain'] = su.replace('http://', '').replace('https://', '')
-        context['protocol'] = 'https' if su.startswith('https://') else 'http'
+        if su:
+            context['domain'] = su.replace('http://', '').replace('https://', '')
+            context['protocol'] = 'https' if su.startswith('https://') else 'http'
         return context
 
 def custom_password_reset_confirm(request, uidb64, token):

@@ -1,10 +1,13 @@
 import shutil
 import tempfile
+import re
 from pathlib import Path
 from decimal import Decimal
 from datetime import date
 
 from django.contrib.auth.models import User
+from django.core import mail
+from django.core.cache import cache
 from django.urls import reverse
 from django.test import TestCase, override_settings
 
@@ -155,3 +158,79 @@ class TenantDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No payments recorded yet.")
         self.assertContains(response, "No receipt is available yet.")
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    SITE_URL="https://example.test",
+    PASSWORD_RESET_EMAIL_RATE_LIMIT=20,
+    PASSWORD_RESET_IP_RATE_LIMIT=50,
+)
+class PasswordResetFlowTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        mail.outbox = []
+        self.user = User.objects.create_user(
+            username="reset_tenant",
+            email="tenant@example.test",
+            password="OldPass123!",
+        )
+
+    def _request_reset(self, email):
+        return self.client.post(
+            reverse("password_reset"),
+            {"email": email},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+    def _reset_link_path(self):
+        self.assertEqual(len(mail.outbox), 1)
+        match = re.search(r"https://example\.test(?P<path>/password-reset/confirm/[^\s<]+)", mail.outbox[0].body)
+        self.assertIsNotNone(match)
+        return match.group("path")
+
+    def test_reset_request_uses_generic_response_and_sends_email_for_existing_user(self):
+        response = self._request_reset("tenant@example.test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertIn("If an account with that email exists", response.json()["message"])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://example.test/password-reset/confirm/", mail.outbox[0].body)
+
+    def test_reset_request_does_not_enumerate_unknown_email(self):
+        response = self._request_reset("missing@example.test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_reset_confirm_updates_password_and_prevents_token_reuse(self):
+        self._request_reset("tenant@example.test")
+        reset_path = self._reset_link_path()
+
+        response = self.client.post(
+            reset_path,
+            {"new_password1": "NewPass123!", "new_password2": "NewPass123!"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_complete"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("NewPass123!"))
+        self.assertFalse(self.user.check_password("OldPass123!"))
+
+        reused_response = self.client.get(reset_path)
+        self.assertEqual(reused_response.status_code, 200)
+        self.assertContains(reused_response, "Invalid Reset Link")
+
+    def test_malformed_reset_link_is_handled_safely(self):
+        response = self.client.get(
+            reverse(
+                "password_reset_confirm",
+                kwargs={"uidb64": "not-a-valid-user", "token": "bad-token"},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Invalid Reset Link")
