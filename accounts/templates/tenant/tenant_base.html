@@ -310,6 +310,19 @@
   domain="www.chatbase.co"
   async>
 </script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const liftChatbaseBubble = () => {
+      const bubble = document.getElementById('chatbase-bubble-button');
+      if (bubble && window.matchMedia('(max-width: 768px)').matches) {
+        bubble.style.bottom = '84px';
+      }
+    };
+
+    liftChatbaseBubble();
+    new MutationObserver(liftChatbaseBubble).observe(document.body, { childList: true, subtree: true });
+  });
+</script>
 
 {% if user.is_authenticated and not user.is_staff %}
 <script>

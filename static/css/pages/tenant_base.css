@@ -417,7 +417,7 @@
                 background: var(--surface);
                 border-top: 1px solid var(--border);
                 display: grid;
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(5, minmax(0, 1fr));
                 box-shadow: 0 -8px 24px rgba(0,0,0,.08);
             }
             .t-bottom-link {
@@ -432,10 +432,17 @@
                 font-weight: 700;
                 border-radius: 8px;
                 min-width: 0;
+                overflow: hidden;
             }
             .t-bottom-link i {
                 font-size: 18px;
                 line-height: 1;
+            }
+            .t-bottom-link span {
+                max-width: 100%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
             .t-bottom-link.active {
                 color: var(--accent);
